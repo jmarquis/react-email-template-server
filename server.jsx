@@ -6,6 +6,9 @@ import bodyParser from "body-parser"
 import React from "react"
 import ReactDOMServer from "react-dom/server"
 
+import { log, logError } from "./etc/logger"
+import handleError from "./etc/handleError"
+
 const app = express()
 app.use(bodyParser.json())
 
@@ -14,17 +17,50 @@ app.get("/", (request, response) => {
   response.send("hey")
 })
 
-// email rendering
-app.post("/email/:email", (request, response) => {
+// email template rendering
+app.post("/render/:template", (request, response) => {
 
-  console.log("Rendering email: " + request.params.email)
+  log(`Rendering template: ${request.params.template}`)
 
-  const EmailComponent = require(path.join(__dirname, "emails", request.params.email + ".jsx")).default
+  try {
 
-  response.send(ReactDOMServer.renderToStaticMarkup(<EmailComponent {...request.body} />))
+    const HtmlEmailComponent = require(path.join(__dirname, "templates", request.params.template, `${request.params.template}.html.jsx`)).default
+    const generatePlainTextEmail = require(path.join(__dirname, "templates", request.params.template, `${request.params.template}.text.js`)).default
+
+    try {
+      response.send({
+        html: ReactDOMServer.renderToStaticMarkup(<HtmlEmailComponent {...request.body.data} />),
+        text: generatePlainTextEmail(request.body.data).trim()
+      })
+    } catch (error) {
+      const message = `Error rendering template: ${request.params.template}`
+      logError(message, error.stack)
+      return response.status(500).send({
+        error: message,
+        stack: error.stack
+      })
+    }
+
+  } catch (error) {
+    if (error.message.indexOf("Cannot find module") > -1) {
+      const message = `Template not found: ${request.params.template}`
+      logError(message, error.stack)
+      return response.status(404).send({
+        error: message,
+        stack: error.stack
+      })
+    } else {
+      const message = `Error rendering template: ${request.params.template}`
+      logError(message, error.stack)
+      return response.status(500).send({
+        error: message,
+        stack: error.stack
+      })
+    }
+  }
 
 })
 
 app.listen(4000, () => {
-  console.log("Server listening on port 4000...")
+  log("Server listening on port 4000...")
 })
